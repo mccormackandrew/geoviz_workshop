@@ -13,6 +13,8 @@ knitr::opts_chunk$set(echo = TRUE,
                       message = FALSE,
                       class.source='bad-code',
                       class.output='bad-code')
+
+
 ```
 
 
@@ -35,6 +37,10 @@ library(maptools)
 library(rgdal)
 library(rmapshaper)
 library(broom)
+```
+
+```{r include = FALSE}
+theme_set(theme_gray(base_family = "IBM Plex Sans"))
 ```
 
 # Shapefiles
@@ -150,7 +156,7 @@ img <- readPNG("r_data/rd_simple_base_plot.png")
 grid.raster(img)
 ```
 
-As you can see, the map looks essentially the same. We were able to greatly reduce the size of the original Shapefile while not sacrificing a lot of detail. 
+As you can see, the map looks essentially the same. We were able to greatly reduce the size of the original Shapefile while not sacrificing a lot of detail. You may also have noticed that this plot loaded much faster than the plot we created with the original shapefile.
 
 ## Converting a `SpatialPolygonsDataFrame` object into to data frame
 
@@ -173,7 +179,7 @@ This data frame has a number of variables that require our attention. To create 
 * `group`: an identifier that is unique for each region (in this case, Quebec provincial riding)
 * `id`: the names for each group (in this case, `NM_CEP`)
 
-Unfortunately, in the process of converting `rd_simple` into a data frame, we lost all the attribute data (aside from the `id` column, which was originally `NM_CEP`) associated with the provincial ridings. To remedy this, we can merge the attribute data from the `SpatialPolygonsDataFrame` (`rd_simple`) with the data frame we just created (rd_df): 
+Unfortunately, in the process of converting `rd_simple` into a data frame, we lost all the attribute data (aside from the `id` column, which was originally `NM_CEP`) associated with the provincial ridings. To remedy this, we can merge the attribute data from the `SpatialPolygonsDataFrame` (`rd_simple`) with the data frame we just created (`rd_df`): 
 
 ```{r}
 rd_df <- left_join(rd_df, 
@@ -182,20 +188,23 @@ rd_df <- left_join(rd_df,
 head(rd_df)
 ```
 
+Now all of the variables from the original Shapefile have returned. In this case, the original Shapefile only had three variables, all of which were identifiers for the provincial riding. Other Shapefiles may contain a greater amount of attribute data, making the function above more important. 
+
 ## Plotting spatial data in `ggplot2`
 
 To create a map with the `rd_df` data frame we just created, the following aesthetic mappings are required: `x = long` (longitude), `y = lat` (latitude), and `group = group` (this tells `geom_polygon()` how to group observations---in this case, provinces).
 
-```{r fig.width = 7, fig.height = 4}
+```{r fig.width = 5, fig.height = 4}
 ggplot(rd_df, aes(long, lat)) +
   geom_polygon()
 ```
 This map does not look very good. What did I miss here? Yes, you are right: we need a grouping variable so that `geom_polygon()` knows that each riding is its own polygon.
 
-```{r}
+```{r fig.width = 5, fig.height = 4}
 ggplot(rd_df, aes(long, lat, group = group)) +
   geom_polygon()
 ```
+
 
 
 ## Leaflet
