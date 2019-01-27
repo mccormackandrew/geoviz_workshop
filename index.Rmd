@@ -1,0 +1,222 @@
+---
+title: "Geographic Data Visualization in R"
+author: "Andrew McCormack"
+date: '2019-01-10'
+output: 
+  tufte::tufte_html: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      warning = FALSE,
+                      error = FALSE,
+                      message = FALSE,
+                      class.source='bad-code',
+                      class.output='bad-code')
+```
+
+
+```{css echo=FALSE}
+.bad-code { background-color: moccasin; }
+```
+
+# Overview of workshop
+
+In this workshop, you will learn how to visualize spatial data in R. Spatial data are widely available for many different political contexts, making them an excellent resource for communicating information that is geographic in nature. Despite their abundance as a data source, working with specialized shapefiles can be daunting to the uninitiated. The aim of this workshop is disentangle many of challenges of working with spatial data in R. We begin with the basics of importing and manipulating shapefiles. Next, we cover how to create beautiful visualizations with spatial data in the ggplot2 package. In the remainder of the workshop, participants will learn how generate interactive maps using the leaflet package.
+
+## Getting started
+
+```{r}
+library(tidyverse)
+library(leaflet)
+library(sf)
+library(sp)
+library(maptools)
+library(rgdal)
+library(rmapshaper)
+library(broom)
+```
+
+# Shapefiles
+
+## What is a shapefile?
+
+To demonstrate how to work with Shapefiles in R, we will work with a Shapefile containing 2018 Provincial electoral divisions for Québec. I have obtained this Shapefile from [Élections Québec](https://www.electionsquebec.qc.ca/english/provincial/electoral-map/provincial-electoral-division-geometric.php) and included it in the supplementary materials for this workshop. The folder `quebec_prov_ridings` contains 5 different files: 
+
+```{r echo = FALSE}
+list.files("quebec_prov_ridings")
+```
+
+If this is your first time working with a Shapefile, you may be surprised to notice that there are several individual files named `qc_ridings`, each with a different file extension. Though its name suggests a single file, a shapefile is actually a group of files containing feature geometry and feature attribute data. While different data sources will provide different types of constituent files, three of these files are essential: `.shp`, `.shx`, and `.dbf`:
+
+* `.shp`: the file that contains the geometry for all features
+* `.shx`: indexes the geometry
+* `.dbf`: contains feature attributes in tabular format
+
+## How to load a shapefile into R
+
+R has a number of packages containing functions for importing shapefiles. We will use the `readOGR` function from the `rgeos` package. `readOGR` takes two main arguments. The first argument, `dsn` (short for data source name), specifies the folder where our shapefile is located.^[Because my working directory is set to the folder containing the `quebec_prov_ridings` folder, I simply type `quebec_prov_ridings`. If you are working from within the directory where the Shapefile is located, specify `dsn = "."`.] The second argument, `layer`, specifies the file name without an extension (i.e. I use `"qc_ridings"`, not `"qc_ridings.shp"`). Using the assignment operator `<-`, I assign the Shapefile to an object named `rd`:
+
+```{r }
+rd <- readOGR(dsn = "quebec_prov_ridings", 
+              layer = "qc_ridings")
+```
+
+Now that we've imported the Shapefile into our environment, let's see what we are working with:
+
+```{r include = FALSE}
+sumrd <- summary(rd)
+```
+
+```{r}
+summary(rd)
+```
+
+The first line of output tells us that `rd` is of the class `SpatialPolygonsDataFrame`. This suggests that the shapefile has a polygon layer^[In our case, the polygon layer contains the outlines of Québec provincial electoral boundaries. It contains a number of geographic points that, when connected with lines, will plot our map of Québec.] (`SpatialPolygons`) and also that is has an attributes table (`DataFrame`). Under `Coordinates:`, we are given the bounding box of the map in latitude and longitude. This is a rectangle that encompasses the entire map:
+
+```{r echo = FALSE, comment=NA}
+sumrd$bbox
+```
+
+The next few lines give us the projection information:
+
+```{r echo = FALSE, comment=NA}
+cat("Is projected:", sumrd$is.projected)
+cat(sumrd$proj4string)
+```
+As you may know, the Earth is round. In order to plot maps in a two-dimensional space, spherical coordinates (such as latitude and longitude) must be transformed to planar coordinates (x and y). This is a [complicated topic](https://courses.washington.edu/gis250/lessons/projection/) subject to [much debate](https://xkcd.com/977/). For the purposes of this workshop, we will accepts Élections Québec's projection.
+
+The last few lines of the ouput from `summary(rd)` gives us a summary of each column in the attributes table. This is the dataframe associated with the `qc_ridings` Shapefile. Because they don't have very intuitive names, here is a description of each variable:
+
+* `CO_CEP`: the electoral district code. This variable will be very useful when it comes to merging in other sources of data.
+* `NM_CEP`: the official name of the electoral district
+* `NM_TRI_CEP`: electoral district names transformed into non-accented capital letters, removing all characters that are not letters
+
+Let's take a look at this Shapefile with the `plot()` function:  
+
+```{r eval = FALSE}
+plot(rd)
+```
+```{r fig.width=6, fig.height=6,echo=FALSE}
+library(png)
+library(grid)
+img <- readPNG("r_data/rd_base_plot.png")
+grid.raster(img)
+```
+
+While the `plot()` function is a good method for making sure that the Shapefile is looking and working as it should, below we will construct our plots using the `ggplot2` package, and not `plot()` (which is part of base R graphics). 
+
+## Simplifying shapefiles
+
+Often, Shapefiles will be very large and it will take your computer a while to load them into R and even longer to manipulate and plot them. When creating static maps, we often don't need the level of precision that large Shapefiles provide. For this reason, it is often desirable to simplify our Shapefile after importing it into R. 
+
+To do this, we can use the `ms_simplify()` function from the `rmapshaper` package. The `ms_simplify()` function will samples points from the polygons in `rd` to reduce it's size while preserving the polygons' (ridings') shapes. While this function has a number arguments, we will focus on the essentials: `input`, `keep`, and `keep_shapes`: 
+
+* The `input` argument is where we specify the Shapefile we want to simplify
+* The `keep` argument is the proportion of points from the original Shapefile we want to retain. We can get away with a surprising amount of reduction here without substantially altering the appearance of the map. You will notice that we specify `keep = 0.05`, which means we will keep only 5 percent of the original points.
+* The `keep_shapes` argument, when `TRUE`, prevents small polygons from disappearing at high levels of simplifications. Because we don't want to lose any of our ridings in the simplification process, we specify `keep_shapes = TRUE`
+
+```{r eval = FALSE}
+rd_simple <- ms_simplify(input = rd, 
+                         keep = 0.05,
+                         keep_shapes = TRUE)
+```
+
+```{r include = FALSE}
+# rd_simple <- ms_simplify(input = rd, 
+#                          keep = 0.05,
+#                          keep_shapes = TRUE)
+# save(rd_simple, file = "r_data/rd_simple")
+
+load("r_data/rd_simple.Rdata")
+```
+
+```{r }
+# How does size of simplified Shapefile compare to original Shapefile?
+(object.size(rd_simple)/object.size(rd))[1]
+```
+
+After simplifying with `ms_simplify()`, the Shapefile is now only `r round(((object.size(rd_simple)/object.size(rd))[1])*100, 0)` percent of its original size. This will make visualizing these data much more efficient!
+
+Let's plot this simplified Shapefile to see how it compares to our original plot:
+
+```{r eval = FALSE}
+plot(rd_simple)
+```
+```{r fig.width=6, fig.height=6,echo=FALSE}
+library(png)
+library(grid)
+img <- readPNG("r_data/rd_simple_base_plot.png")
+grid.raster(img)
+```
+
+As you can see, the map looks essentially the same. We were able to greatly reduce the size of the original Shapefile while not sacrificing a lot of detail. 
+
+## Converting a `SpatialPolygonsDataFrame` object into to data frame
+
+While the generic `plot()` function can use `SpatialPolygonsDataFrame` objects directly, `ggplot2` cannot. Therefore we need to extract them as a data frame. 
+
+The `tidy()` function from the `broom` package comes in handy here. This function converts a variety of different R objects into data frame objects.^[More specifically, `tidy()` convert a number of different model outputs into *tibbles*, which are a type of data frame. This distinction isn't important for our purposes, [but you can read more here](https://cran.r-project.org/web/packages/tibble/vignettes/tibble.html)].] Most imporantly for us, `tidy()` can coerce a `SpatialPolygonsDataFrame` into a data frame. To do so, we input the object we want converted, which is our `SpatialPolygonsDataFrame` object, `rd_simple`
+into the `tidy()` function. We also need to specify a `region` from the attribute data of `rd_simple` so that we know which coordinates go with which provincial ridings:
+
+```{r }
+rd_df <- broom::tidy(x = rd_simple, region = "NM_CEP")
+
+# Examine the first few rows of the data frame
+head(rd_df)
+```
+
+This data frame has a number of variables that require our attention. To create maps in `ggplot()`, three of these are crucial:
+
+* `long`: longitude, a measure of east-west position
+* `lat`: latitude, a measure of north-south position
+* `group`: an identifier that is unique for each region (in this case, Quebec provincial riding)
+* `id`: the names for each group (in this case, `NM_CEP`)
+
+Unfortunately, in the process of converting `rd_simple` into a data frame, we lost all the attribute data (aside from the `id` column, which was originally `NM_CEP`) associated with the provincial ridings. To remedy this, we can merge the attribute data from the `SpatialPolygonsDataFrame` (`rd_simple`) with the data frame we just created (rd_df): 
+
+```{r}
+rd_df <- left_join(rd_df, 
+          rd_simple@data, 
+          by = c("id" = "NM_CEP"))
+head(rd_df)
+```
+
+## Plotting spatial data in `ggplot2`
+
+To create a map with the `rd_df` data frame we just created, the following aesthetic mappings are required: `x = long` (longitude), `y = lat` (latitude), and `group = group` (this tells `geom_polygon()` how to group observations---in this case, provinces).
+
+```{r fig.width = 7, fig.height = 4}
+ggplot(rd_df, aes(long, lat)) +
+  geom_polygon()
+```
+This map does not look very good. What did I miss here? Yes, you are right: we need a grouping variable so that `geom_polygon()` knows that each riding is its own polygon.
+
+```{r}
+ggplot(rd_df, aes(long, lat, group = group)) +
+  geom_polygon()
+```
+
+
+## Leaflet
+```{r eval = FALSE}
+# Fix projection
+rd <- spTransform(rd, CRS("+init=epsg:4326"))
+
+rd@bbox
+
+ggplot(rd, aes(long, lat, group)) +
+  geom_polygon()
+
+
+st_geometry(rd)
+rd <- rmapshaper::ms_simplify(rd)
+rd
+plot(rd)
+
+
+leaflet() %>%
+  addPolygons(data = rd) %>%
+  addTiles()
+```
+
