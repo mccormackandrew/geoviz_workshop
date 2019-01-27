@@ -80,9 +80,7 @@ qc_values <- qc_values[first_riding:nrow(qc_values), ]
 
 qc_values$riding_name <- gsub("–", "-", qc_values$riding_name)
 
-"Anjou-Louis-Riel"
 qc_values$riding_name[qc_values$riding_name == "L’Assomption"] <- "L'Assomption"
 qc_values$riding_name[qc_values$riding_name == "D’Arcy-McGee"] <- "D'Arcy-McGee" 
 
-write.csv(qc_values, "qc_values.csv")
-write.csv(qc_values, "qc_values.csv")
+write.csv(qc_values, "r_data/qc_values.csv")
