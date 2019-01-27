@@ -84,3 +84,5 @@ qc_values$riding_name[qc_values$riding_name == "L’Assomption"] <- "L'Assomptio
 qc_values$riding_name[qc_values$riding_name == "D’Arcy-McGee"] <- "D'Arcy-McGee" 
 
 write.csv(qc_values, "r_data/qc_values.csv")
+
+
