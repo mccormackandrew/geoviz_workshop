@@ -13,8 +13,6 @@ knitr::opts_chunk$set(echo = TRUE,
                       message = FALSE,
                       class.source='bad-code',
                       class.output='bad-code')
-
-
 ```
 
 
@@ -37,6 +35,7 @@ library(maptools)
 library(rgdal)
 library(rmapshaper)
 library(broom)
+library(ggthemes)
 ```
 
 ```{r include = FALSE}
@@ -198,12 +197,56 @@ To create a map with the `rd_df` data frame we just created, the following aesth
 ggplot(rd_df, aes(long, lat)) +
   geom_polygon()
 ```
+
 This map does not look very good. What did I miss here? Yes, you are right: we need a grouping variable so that `geom_polygon()` knows that each riding is its own polygon.
 
 ```{r fig.width = 5, fig.height = 4}
 ggplot(rd_df, aes(long, lat, group = group)) +
   geom_polygon()
 ```
+
+This map looks better, but there are still a number of issues. First, it looks like `ggplot` alters the shape of the map based on the width and length of the plot. While this may work for other types of plots, it does not work for maps. To get an accurate map of Quebec, we need to specify `coord_fixed()`. This fixes the relationship between the axes such that one unit on the x-axis (longitude) is the same length as one unit on the y-axis (latitude):
+
+```{r fig.width = 5, fig.height = 4}
+ggplot(rd_df, aes(long, lat, group = group)) +
+  geom_polygon() +
+  coord_fixed()
+```
+
+You will also notice that the axis text has no substantive significance. You can remove it, along with the axis ticks and background grid using a theme of your choice. For a simplistic presentation, I suggest `theme_map()` from the `ggthemes` package. 
+
+```{r}
+ggplot(rd_df, aes(long, lat, group = group)) +
+  geom_polygon() +
+  coord_fixed() +
+  ggthemes::theme_map()
+```
+
+# Incorporating data into the map 
+
+So far, we have just plotted raw coordinates, which is not very exciting. Our map will be far more informative if we incorporate some Quebec provincial riding-level statistics into the map. To do so, we need to find and then merge some riding-level data with our geographic coordinates (`rd_df`). I have included some example data with this workshop, which can be loaded with the `read.csv()` function below: 
+
+```{r}
+qc_val <- read.csv("https://raw.githubusercontent.com/mccormackandrew/geoviz_workshop/master/r_data/qc_val.csv")
+
+rd_df <- left_join(rd_df, qc_val, c("id" = "riding_name"))
+
+ggplot(rd_df, aes(long, lat, group = group, fill = vismin_population)) +
+  geom_polygon() +
+  coord_fixed() +
+  theme_void() +
+  scale_fill_viridis_c()
+```
+
+
+```{r}
+ggplot(rd_df[rd_df$NM_TRI_CEP], aes(long, lat, group = group, fill = vismin_population)) +
+  geom_polygon() +
+  coord_fixed() +
+  theme_void() +
+  scale_fill_viridis_c()
+```
+
 
 
 

@@ -83,6 +83,20 @@ qc_values$riding_name <- gsub("–", "-", qc_values$riding_name)
 qc_values$riding_name[qc_values$riding_name == "L’Assomption"] <- "L'Assomption"
 qc_values$riding_name[qc_values$riding_name == "D’Arcy-McGee"] <- "D'Arcy-McGee" 
 
-write.csv(qc_values, "r_data/qc_values.csv")
+numerics <- names(qc_values)[2:length(names(qc_values))]
+
+for(i in 1:length(numerics)) {
+  qc_values[ , numerics[i]] <- as.numeric(qc_values[, numerics[i]])
+}
+
+region_names <- read.csv("r_data/qc_region_names.csv")
+
+qc_values <- region_names %>%
+  dplyr::select(NM_CEP, regionname) %>%
+  inner_join(qc_values, by = c("NM_CEP" = "riding_name")) %>%
+  mutate(region = regionname, riding_name = NM_CEP) %>%
+  dplyr::select(-regionname, -NM_CEP)
+
+write.csv(qc_values, "r_data/qc_val.csv")
 
 
