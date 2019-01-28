@@ -164,12 +164,18 @@ While the generic `plot()` function can use `SpatialPolygonsDataFrame` objects d
 The `tidy()` function from the `broom` package comes in handy here. This function converts a variety of different R objects into data frame objects.^[More specifically, `tidy()` convert a number of different model outputs into *tibbles*, which are a type of data frame. This distinction isn't important for our purposes, [but you can read more here](https://cran.r-project.org/web/packages/tibble/vignettes/tibble.html)].] Most imporantly for us, `tidy()` can coerce a `SpatialPolygonsDataFrame` into a data frame. To do so, we input the object we want converted, which is our `SpatialPolygonsDataFrame` object, `rd_simple`
 into the `tidy()` function. We also need to specify a `region` from the attribute data of `rd_simple` so that we know which coordinates go with which provincial ridings:
 
-```{r }
+```{r echo = TRUE, results = 'hide'}
 rd_df <- broom::tidy(x = rd_simple, region = "NM_CEP")
 
 # Examine the first few rows of the data frame
 head(rd_df)
 ```
+
+```{r echo = FALSE}
+head(data.frame(rd_df))
+```
+
+
 
 This data frame has a number of variables that require our attention. To create maps in `ggplot()`, three of these are crucial:
 
@@ -178,16 +184,15 @@ This data frame has a number of variables that require our attention. To create 
 * `group`: an identifier that is unique for each region (in this case, Quebec provincial riding)
 * `id`: the names for each group (in this case, `NM_CEP`)
 
-Unfortunately, in the process of converting `rd_simple` into a data frame, we lost all the attribute data (aside from the `id` column, which was originally `NM_CEP`) associated with the provincial ridings. To remedy this, we can merge the attribute data from the `SpatialPolygonsDataFrame` (`rd_simple`) with the data frame we just created (`rd_df`): 
+Unfortunately, in the process of converting `rd_simple` into a data frame, we lost all the attribute data (aside from the `id` column, which was originally `NM_CEP`) associated with the provincial ridings. To remedy this, we can merge the attribute data from the `SpatialPolygonsDataFrame` (`rd_simple`) with the data frame we just created (`rd_df`) using `dplyr`'s merge functions. By default `dplyr`'s merge functions look for a common variable, or common variables, between the two data frames we want to merge.^[For more information on `dplyr`'s merge functions, I suggest [this cheatsheat](https://stat545.com/bit001_dplyr-cheatsheet.html) and/or [this guide](https://rpubs.com/williamsurles/293454)] In our case, although we have two common variables, they have different names. For this reason, we need to explicity specify the variables we want to merge on:  
 
 ```{r}
-rd_df <- left_join(rd_df, 
+rd_df <- right_join(rd_df, 
           rd_simple@data, 
           by = c("id" = "NM_CEP"))
-head(rd_df)
 ```
 
-Now all of the variables from the original Shapefile have returned. In this case, the original Shapefile only had three variables, all of which were identifiers for the provincial riding. Other Shapefiles may contain a greater amount of attribute data, making the function above more important. 
+Now all of the variables from the original Shapefile have returned. In this case, the original Shapefile only had three variables, all of which were identifiers for the provincial riding. Other Shapefiles may contain a greater amount of attribute data, making it important to merge these two data frames. 
 
 ## Plotting spatial data in `ggplot2`
 
@@ -201,74 +206,121 @@ ggplot(rd_df, aes(long, lat)) +
 This map does not look very good. What did I miss here? Yes, you are right: we need a grouping variable so that `geom_polygon()` knows that each riding is its own polygon.
 
 ```{r fig.width = 5, fig.height = 4}
-ggplot(rd_df, aes(long, lat, group = group)) +
+ggplot(rd_df, aes(x = long, 
+                  y = lat, 
+                  group = group)) +
   geom_polygon()
 ```
 
 This map looks better, but there are still a number of issues. First, it looks like `ggplot` alters the shape of the map based on the width and length of the plot. While this may work for other types of plots, it does not work for maps. To get an accurate map of Quebec, we need to specify `coord_fixed()`. This fixes the relationship between the axes such that one unit on the x-axis (longitude) is the same length as one unit on the y-axis (latitude):
 
 ```{r fig.width = 5, fig.height = 4}
-ggplot(rd_df, aes(long, lat, group = group)) +
+ggplot(rd_df, aes(x = long, 
+                  y = lat, 
+                  group = group)) +
   geom_polygon() +
   coord_fixed()
 ```
 
-You will also notice that the axis text has no substantive significance. You can remove it, along with the axis ticks and background grid using a theme of your choice. For a simplistic presentation, I suggest `theme_map()` from the `ggthemes` package. 
+You will also notice that the axis text has no substantive significance. You can remove it, along with the axis ticks and background grid using a theme of your choice. For a simplistic presentation, I suggest `theme_void()`.^[Two other `ggplot` theme options that are useful for maps are `theme_map()` from the `hrbrthemes` package and `theme_map()` from the `ggthemes` package.] 
 
 ```{r}
-ggplot(rd_df, aes(long, lat, group = group)) +
+ggplot(rd_df, aes(x = long, 
+                  y = lat, 
+                  group = group)) +
   geom_polygon() +
   coord_fixed() +
-  ggthemes::theme_map()
+  theme_void()
 ```
 
 # Incorporating data into the map 
 
-So far, we have just plotted raw coordinates, which is not very exciting. Our map will be far more informative if we incorporate some Quebec provincial riding-level statistics into the map. To do so, we need to find and then merge some riding-level data with our geographic coordinates (`rd_df`). I have included some example data with this workshop, which can be loaded with the `read.csv()` function below: 
+So far, we have just plotted raw coordinates, which is not very exciting. Our map will be far more informative if we incorporate some Quebec provincial riding-level statistics. To do so, we need to find and then merge riding-level data with our geographic coordinates (`rd_df`). I have included some example data with this workshop, which can be loaded with the `read.csv()` function below: 
 
-```{r}
-qc_val <- read.csv("https://raw.githubusercontent.com/mccormackandrew/geoviz_workshop/master/r_data/qc_val.csv")
+```{r echo = TRUE, results = 'hide'}
+qc_val <- read.csv("https://raw.githubusercontent.com/mccormackandrew/geoviz_workshop/master/r_data/qc_val.csv", 
+                   stringsAsFactors = FALSE)
+head(qc_val)
+```
+```{r echo = FALSE}
+head(data.frame(qc_val))
+```
 
+These data come from [Quebec's chief returning officer (DGEQ)](https://www.electionsquebec.qc.ca/english/provincial/electoral-map/socioeconomic-files.php) and are  based on the 2016 census. For the purpose of this workshop, I narrowed the data down to a number of relevant socio-demographic indicators. 
+
+Let's merge these data with our riding coordinates data.  
+
+```{r echo = TRUE, results = 'hide'}
 rd_df <- left_join(rd_df, qc_val, c("id" = "riding_name"))
+head(rd_df)
+```
 
-ggplot(rd_df, aes(long, lat, group = group, fill = vismin_population)) +
+```{r echo = FALSE}
+head(data.frame(rd_df))
+```
+
+Now that we have the variables we need, let's create a more informative plot. To do this, we need to specify our variable of interest as a `fill` aesthetic inside ggplot. The `fill` aesthetic will colour the provincial ridings according to variable we feed it. I will feed it the `mother_tongue_english` variable, which is the proportion of the total population whose first language is English.  
+
+```{r }
+ggplot(rd_df, aes(x = long, 
+                  y = lat, 
+                  group = group, 
+                  fill = mother_tongue_english)) +
   geom_polygon() +
   coord_fixed() +
   theme_void() +
   scale_fill_viridis_c()
 ```
+Although this plots exactly what we had intended---mother tongue by provincial riding in Quebec---this map is not a very useful visual aid for understanding the proportion of Anglophones in Quebec. It overemphasizes larger geographical units by assigning them a stronger visual weight. Because it is not land area itself we are interested in, this leads to a distorted impression of the data. 
 
+There are a number of solutions for this. First, we can use an alternative mapping technique, such as a hexagonal grid map. Though we don't cover hexagonal grid maps in this workshop, they can be created for Quebec provincial ridings using the `mapcan` package.  
+
+```{r echo = FALSE}
+library(mapcan)
+mapcan::riding_binplot(riding_data = data.frame(rd_df), 
+                       value_col = mother_tongue_english,
+                       riding_col = riding_code,
+                       continuous = TRUE,
+                       provincial = TRUE, 
+                       province = QC,
+                       shape = "hexagon") +
+  theme_mapcan() +
+  scale_fill_viridis_c(name = "English as first langage, \nproportion of population") +
+  ggtitle("Hex tile map of English speakers by \nQuebec provincial ridings")
+```
+
+For an overview of how `mapcan` works, consult [this guide](https://www.dropbox.com/s/unibo5h481lg8my/mapcan_workshop.pdf?dl=0).
+
+Another solution is to create a map that focuses on a smaller region of Quebec, like Montréal. To do this, we can subset `rd_df` to include only ridings from Montréal within `ggplot`:
 
 ```{r}
-ggplot(rd_df[rd_df$NM_TRI_CEP], aes(long, lat, group = group, fill = vismin_population)) +
+ggplot(rd_df[rd_df$region == "Montréal", ], 
+       aes(long, lat, group = group, fill = mother_tongue_english)) +
   geom_polygon() +
   coord_fixed() +
   theme_void() +
   scale_fill_viridis_c()
 ```
 
+By focusing on Montréal, we reveal some of the heterogeneity we missed out on with the full map of Quebec.  
+
+Thus far, we have learned how to work with Shapefiles to create static maps in `ggplot2`. 
+```{r include = FALSE}
+# SOme segue here into interactive maps
+```
 
 
+## Creating interactive maps in R
 
-## Leaflet
-```{r eval = FALSE}
+There are a number of packages in R that offer powerful tools for creating interactive maps. We will focus on one of the most powerful and user-friendly of these packages---`leaflet`. Leaflet is a Javascript library for interactive maps which can be used in R with the `leaflet` package.
+
+
+```{r }
 # Fix projection
-rd <- spTransform(rd, CRS("+init=epsg:4326"))
-
-rd@bbox
-
-ggplot(rd, aes(long, lat, group)) +
-  geom_polygon()
-
-
-st_geometry(rd)
-rd <- rmapshaper::ms_simplify(rd)
-rd
-plot(rd)
-
+rd_leaf <- spTransform(rd_simple, CRS("+init=epsg:4326"))
 
 leaflet() %>%
-  addPolygons(data = rd) %>%
+  addPolygons(data = rd_leaf) %>%
   addTiles()
 ```
 
