@@ -3,7 +3,8 @@ title: "Geographic Data Visualization in R"
 author: "Andrew McCormack"
 date: '2019-01-10'
 output: 
-  tufte::tufte_html: default
+  tufte::tufte_html:
+    tufte_features: ["fonts", "italics"]
 ---
 
 ```{r setup, include=FALSE}
@@ -17,7 +18,7 @@ knitr::opts_chunk$set(echo = TRUE,
 
 
 ```{css echo=FALSE}
-.bad-code { background-color: moccasin; }
+.bad-code { background-color: Linen; }
 ```
 
 # Overview of workshop
@@ -27,12 +28,20 @@ In this workshop, you will learn how to visualize spatial data in R. Spatial dat
 ## Getting started
 
 ```{r}
+library(pacman)
+
+p_load(tidyverse,
+       rgdal, 
+       rmapshaper,
+       broom,
+       leaflet)
+
 library(tidyverse)
 library(leaflet)
-library(sf)
-library(sp)
-library(maptools)
-library(rgdal)
+#library(sf)
+#library(sp)
+#library(maptools)
+
 library(rmapshaper)
 library(broom)
 library(ggthemes)
@@ -295,7 +304,10 @@ Another solution is to create a map that focuses on a smaller region of Quebec, 
 
 ```{r}
 ggplot(rd_df[rd_df$region == "Montréal", ], 
-       aes(long, lat, group = group, fill = mother_tongue_english)) +
+       aes(x = long, 
+           y = lat, 
+           group = group, 
+           fill = mother_tongue_english)) +
   geom_polygon() +
   coord_fixed() +
   theme_void() +
@@ -310,17 +322,103 @@ Thus far, we have learned how to work with Shapefiles to create static maps in `
 ```
 
 
-## Creating interactive maps in R
+# Creating interactive maps in R
 
-There are a number of packages in R that offer powerful tools for creating interactive maps. We will focus on one of the most powerful and user-friendly of these packages---`leaflet`. Leaflet is a Javascript library for interactive maps which can be used in R with the `leaflet` package.
+There are a number of packages in R that provide tools for creating interactive maps. We will focus on one of the most powerful and user-friendly of these packages---`leaflet`. Leaflet is a Javascript library for interactive maps that can be used in R with the `leaflet` package.
 
+## Preparing the data
 
-```{r }
-# Fix projection
+Leaflet takes a `SpatialPolygonsDataFrame` (and other types of spatial data) as input, so there is no need to convert our `SpatialPolygonsDataFrame` to a data frame when using Leaflet. However, we do need to make some alterations before our data is ready for use in Leaflet.
+
+First, the map projection that Élections Québec has provided will not work in Leaflet. We can easily change the projection to be more Leaflet-friendly with the `spTransform()` function from the `sp` package. We will use the `EPSG:4362` projection:^[We choose `EPSG:4362` specifically because this is the projection that OpenStreetMap uses. Because we will overlay our `SpatialPolygonsDataFrame` onto a map created with OpenStreetMap data, we want the projections to match. Why OpenStreetMap and not Google Maps? Recently, Google announced that a billing account and API key would be mandatory for using Google Maps. OpenStreetMap is a free alternative.] 
+
+```{r}
+# Transform CRS of Shapefile and assign to new SPDF object
 rd_leaf <- spTransform(rd_simple, CRS("+init=epsg:4326"))
+```
 
+Next, we need to merge in some provincial riding-level data to plot. Remember that the only data our Shapefile contains are riding names. After we converted the `SpatialPolygonsDataFrame` to a data frame in the section above, we merged in relevant socio-demographic indicators found in the `qc_val` data frame. We can also merge these values right into the `@data` slot of `rd_simple` (a `SpatialPolygonsDataFrame`):
+
+```{r}
+rd_leaf@data <- left_join(rd_leaf@data, qc_val, by = c("NM_CEP" = "riding_name"))
+```
+
+## Using Leaflet
+
+Now that our data is ready, we can put it to work in Leaflet. We will use the pipe operator extensively here.^[The pipe operator allows us to structure sequences of operations from left-to-right, instead of from inside and out (nesting functions). This makes code much more flexible and readable. [Read more here](https://magrittr.tidyverse.org/)]. 
+
+In the first line, we simply initialize Leaflet (`leaflet()`). We then pipe this into the `addPolygons()` function, where we input our `SpatialPolygonsDataFrame` and add a few additional arguments to specify line width (`weight`), line colour (`color`)^[Note that, unlike in `ggplot`, you must use the American spelling "color" for this argument. Do not use "colour".] and fill color (`fillColor`):
+
+```{r fig.height=4, fig.width=6}
 leaflet() %>%
-  addPolygons(data = rd_leaf) %>%
+  addPolygons(data = rd_leaf, 
+              weight = 1,
+              color = "red", 
+              fillColor = "bisque") 
+```
+
+This creates a simple, interactive map of the provincial ridings. We can easily overlay this map onto a street map using the `addTiles` function. This function will automatically place an [OpenStreetMap](https://www.openstreetmap.org/#map=7/59.878/-99.064) map on the Leaflet plot: 
+
+```{r fig.height=4, fig.width=6}
+leaflet() %>%
+  addPolygons(data = rd_leaf, 
+              weight = 1,
+              color = "red", 
+              fillColor = "bisque") %>%
   addTiles()
+```
+
+If the default OpenStreetMap does not suit your tastes or needs, there are many [third-party maps](http://leaflet-extras.github.io/leaflet-providers/preview/index.html) available. These can be accessed with the `addProviderTiles` function. In our case,  a black and white map may be a better option, as it will allow us to see the red riding division lines more clearly:
+
+```{r fig.height=4, fig.width=6}
+leaflet() %>%
+  addPolygons(data = rd_leaf, 
+              weight = 1,
+              color = "red", 
+              fillColor = "bisque") %>%
+  addProviderTiles(providers$OpenStreetMap.BlackAndWhite)
+```
+
+Using the `label` argument inside `addPolygons`, we can make it so that the name of the riding pops up when he hover over it:
+
+```{r fig.height=4, fig.width=6}
+rd_leaf$NM_CEP
+colorQuantile(rev())
+leaflet(rd_leaf) %>%
+  addPolygons(label = ~stringr::str_c(NM_CEP),
+              weight = 1, color = "red", 
+              fillColor = "bisque") %>%
+  addProviderTiles(providers$OpenStreetMap.BlackAndWhite)
+```
+
+Aside from riding names, this doesn't tell us much. Let's incorporate some riding level information! 
+
+```{r}
+
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r eval = FALSE}
+# Basic guide to leaflet
+# https://rstudio.github.io/leaflet/basemaps.html
 ```
 
