@@ -379,24 +379,36 @@ leaflet() %>%
   addProviderTiles(providers$OpenStreetMap.BlackAndWhite)
 ```
 
-Using the `label` argument inside `addPolygons`, we can make it so that the name of the riding pops up when he hover over it:
+Aside from riding names, this doesn't tell us much. Let's incorporate some riding level information! 
+
+Using the `label` argument inside `addPolygons()`, we can make the following information appear when we hover over a riding:  (1) the name of the riding (`NM_CEP`), (2) the winning party of that riding in the 2018 provincial election (`winning_party`), and (3) the winning party's share of the vote (`vote_share`). We use the `str_c()` function from the `stringr` package to combine all of this information:
 
 ```{r fig.height=4, fig.width=6}
-rd_leaf$NM_CEP
-colorQuantile(rev())
 leaflet(rd_leaf) %>%
-  addPolygons(label = ~stringr::str_c(NM_CEP),
-              weight = 1, color = "red", 
-              fillColor = "bisque") %>%
+  addPolygons(label = ~stringr::str_c(NM_CEP, ", ",
+                                      winning_party, ", ",
+                                      vote_share, ", "),
+              weight = 1, 
+              fillColor = "red") %>%
   addProviderTiles(providers$OpenStreetMap.BlackAndWhite)
 ```
 
-Aside from riding names, this doesn't tell us much. Let's incorporate some riding level information! 
+We can make this map more informative by shading the ridings according to the winning party of the 2018 election. To do this, we use the `colorFactor()` function from the `leaflet` package, which maps colours to a variable of our choice.
 
-```{r}
+```{r eval = FALSE}
+partycol <- colorFactor(c("deepskyblue1", 
+                          "red",
+                          "royalblue4", 
+                          "orange"), 
+                        rd_leaf@data$winning_party)
 
-
-
+leaflet(rd_leaf) %>%
+  addPolygons(label = ~stringr::str_c(NM_CEP, ", ",
+                                      winning_party, ", ",
+                                      vote_share, ", "),
+              weight = 1, 
+              color = "red") %>%
+  addProviderTiles(providers$OpenStreetMap.BlackAndWhite)
 ```
 
 
