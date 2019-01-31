@@ -241,7 +241,7 @@ The `x` and `y` variables are our geographic coordinates, which in this case are
 
 Aesthetics refer to the variables we want to present. Aesthetic mappings in `ggplot2`, which go inside the `aes()` argument, define the variables that will be represented on our horizontal (x) and vertical (y) axes as well as how the data will be grouped. Let's initialize a `ggplot` object with the data we just created with an aesthetic mapping:
 
-```{r }
+```{r out.height = "3in"}
 ggplot(data = df, 
        mapping = aes(x = x, 
                      y = y))
@@ -253,7 +253,7 @@ There's not much going on here. We need to tell `ggplot` the type of visual elem
 
 Visual elements in `ggplot2` are called `geoms` (as in geometric objects). The appearance and location of these geoms are controlled by the aesthetic properties. There are many different `geom`s to choose from in `ggplot`, but for creating maps, `geom_polygon()` will be the most useful:
 
-```{r }
+```{r out.height = "3in"}
 ggplot(data = df, 
        mapping = aes(x = x, 
                      y = y)) +
@@ -262,7 +262,7 @@ ggplot(data = df,
 
 You will notice that this plot does not contain the two triangular islands that I promised above. The reason for this is that if we feed `geom_polygon()` only x and y coordinates, it just connects the points with no regard for how the points are grouped. This is where the grouping variable comes in. The grouping variable will tell `geom_polygon()` that each triangle is its own distinct region:
 
-```{r }
+```{r out.height = "3in"}
 ggplot(df, aes(x, y, group = group)) +
   geom_polygon()
 ```
