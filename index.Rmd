@@ -4,6 +4,7 @@ author: "Andrew McCormack"
 date: '2019-01-10'
 output: 
   tufte::tufte_html:
+    toc: TRUE
     tufte_features: ["fonts", "italics"]
 ---
 
@@ -32,6 +33,8 @@ There are a number of packages for working with spatial data in R. For importing
 You may have all, some, or none of these packages installed already. For this reason, we use the [`p_load()` function from the `pacman` package](https://cran.r-project.org/web/packages/pacman/vignettes/Introduction_to_pacman.html), which will load the packages you have installed and install and load the packages you don't have installed:
 
 ```{r}
+# If you don't have pacman installed, run:
+# install.packages("pacman")
 library(pacman)
 
 p_load(# Standard data manipulation packages
@@ -52,9 +55,9 @@ theme_set(theme_gray(base_family = "IBM Plex Sans"))
 
 ## What is a Shapefile?
 
-A shapefile is a file format used for storing geographic vector data. While geographic features in a shapefile can be represented by points, lines, or polygons, we will work primarily with polygons. While shapefiles were created for use with geographic information system (GIS) software, they have become increasingly accessible in R thanks to a number of useful packages designed for working with spatial data.   
+A shapefile is a file format used for storing geographic vector data. Geographic features in a shapefile can be represented by points, lines, or polygons, though we will work primarily with polygons. While shapefiles were created for use with geographic information system (GIS) software, they have become increasingly accessible in R thanks to a number of useful packages designed for working with spatial data.   
 
-To demonstrate how to work with shapefiles in R, we will work with a shapefile containing boundaries for Québec Provincial electoral divisions. [These files can be downloaded here.](https://www.dropbox.com/sh/i7536w2oqqdy5bc/AAAnLjkcFMZFDS5_hLqkh99Va?dl=0)^[I have obtained this Shapefile from [Élections Québec](https://www.electionsquebec.qc.ca/english/provincial/electoral-map/provincial-electoral-division-geometric.php).] Make sure that all these files are located in a dedicated folder. I have named this folder `quebec_prov_ridings`.  
+To demonstrate how to work with shapefiles in R, we will work with a shapefile containing boundaries for Québec provincial electoral divisions. [These files can be downloaded here.](https://www.dropbox.com/sh/i7536w2oqqdy5bc/AAAnLjkcFMZFDS5_hLqkh99Va?dl=0)^[I have obtained this Shapefile from [Élections Québec](https://www.electionsquebec.qc.ca/english/provincial/electoral-map/provincial-electoral-division-geometric.php).] Make sure that all these files are located in a dedicated folder. I have named this folder `quebec_prov_ridings`.  
 
 The folder `quebec_prov_ridings` contains 5 different files: 
 
@@ -317,7 +320,7 @@ ggplot(rd_df, aes(x = long,
   theme_void()
 ```
 
-# Incorporating data into the map 
+## Incorporating data into the map 
 
 So far, we have just plotted raw coordinates, which is not very exciting. Our map will be far more informative if we incorporate some Quebec provincial riding-level statistics. To do so, we need to find and then merge riding-level data with our geographic coordinates (`rd_df`). I have included some example data with this workshop, which can be loaded with the `read.csv()` function below: 
 
@@ -417,7 +420,7 @@ rd_leaf@data <- left_join(rd_leaf@data, qc_val, by = c("NM_CEP" = "riding_name")
 
 ## Using Leaflet to plot a Shapefile
 
-Now that our data is ready, we can put it to work in Leaflet. We will use the pipe operator extensively here.^[The pipe operator allows us to structure sequences of operations from left-to-right, instead of from inside and out (nesting functions). This makes code much more flexible and readable. [Read more here](https://magrittr.tidyverse.org/)]. 
+Now that our data is ready, we can put it to work in Leaflet. We will use the pipe operator extensively here.^[The pipe operator allows us to structure sequences of operations from left-to-right, instead of from inside and out (nesting functions). This makes code much more flexible and readable. [Read more here](https://magrittr.tidyverse.org/)]
 
 In the first line, we simply initialize Leaflet (`leaflet()`). We then pipe this into the `addPolygons()` function, where we input our `SpatialPolygonsDataFrame` and add a few additional arguments to specify line width (`weight`), line colour (`color`)^[Note that, unlike in `ggplot`, you must use the American spelling "color" for this argument. Do not use "colour".] and fill color (`fillColor`):
 
@@ -470,7 +473,7 @@ leaflet(rd_leaf) %>%
   addProviderTiles(providers$OpenStreetMap.BlackAndWhite)
 ```
 
-We can make this map more informative by shading the ridings according to the winning party of the 2018 election (or any other variable of our choice). To do this, we use the `colorFactor()` function from the `leaflet` package, which maps colours to a variable of our choice.^[`colorFactor()` is one of a number of `color*` helper functions included in `leaflet` package. Depending on the data, you may also with to use `colorNumeric`, `colorBin`, or `colorQuantile`. [Read more here](https://rstudio.github.io/leaflet/colors.html)] With this function, you specify the colours you want to use as well as the range of inputs (in this case, the parties in the `winning_party` variable) you want to match them to. Inputting the a vector of values (the `winning_party` variable into the function returns a vector of colours in `#RRGGBB`. We can then use this function directly inside the `addPolygon()` function. 
+We can make this map more informative by shading the ridings according to the winning party of the 2018 election (or any other variable of our choice). To do this, we use the `colorFactor()` function from the `leaflet` package, which maps colours to a variable of our choice.^[`colorFactor()` is one of a number of `color*` helper functions included in `leaflet` package. Depending on the data, you may also with to use `colorNumeric`, `colorBin`, or `colorQuantile`. [Read more here](https://rstudio.github.io/leaflet/colors.html)] With this function, you specify the colours you want to use as well as the range of inputs (in this case, the parties in the `winning_party` variable) you want to match them to. Inputting a vector of values (the `winning_party` variable in our case) into the function returns a vector of colours in `#RRGGBB` format. We can then use this function directly inside the `addPolygon()` function:
 
 ```{r fig.height=4, fig.width=5}
 # Create partycol function to colour ridings by party colour

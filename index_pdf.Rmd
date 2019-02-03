@@ -1,0 +1,518 @@
+---
+title: "Geographic Data Visualization in R"
+author: "Andrew McCormack"
+date: '2019-01-10'
+output: 
+  tufte::tufte_handout:
+    toc: TRUE
+    number_sections: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      warning = FALSE,
+                      error = FALSE,
+                      message = FALSE,
+                      class.source='bad-code',
+                      class.output='bad-code')
+```
+
+
+```{css echo=FALSE}
+.bad-code { background-color: Linen; }
+```
+
+# Overview of workshop
+
+In this workshop, you will learn how to visualize spatial data in R. Spatial data are widely available for many different political contexts, making them an excellent resource for communicating information that is geographic in nature. Despite their abundance as a data source, working with specialized Shapefiles can be daunting to the uninitiated. The aim of this workshop is disentangle many of challenges of working with spatial data in R. We begin with the basics of importing and manipulating shapefiles. Next, we cover how to create beautiful visualizations with spatial data in the ggplot2 package. In the remainder of the workshop, participants will learn how generate interactive maps using the leaflet package.
+
+## Getting started
+
+There are a number of packages for working with spatial data in R. For importing and manipulating spatial data, we use functions from the `rgdal`, `rmapshaper`, and `sp` packages. For plotting static maps, we will use the `ggplot2` package, which is included in the `tidyverse` suite of packages. Standard data manipulation will be performed with function from `dplyr` and `broom` (both part of the `tidyverse`). To create interactive maps, we will use the `leaflet` package. 
+
+You may have all, some, or none of these packages installed already. For this reason, we use the [`p_load()` function from the `pacman` package](https://cran.r-project.org/web/packages/pacman/vignettes/Introduction_to_pacman.html), which will load the packages you have installed and install and load the packages you don't have installed:
+
+```{r}
+library(pacman)
+
+p_load(# Standard data manipulation packages
+       tidyverse,
+       # Spatial data packages
+       rgdal, 
+       rmapshaper,
+       sp,
+       # Interactive mapping
+       leaflet)
+```
+
+```{r include = FALSE}
+#theme_set(theme_gray(base_family = "IBM Plex Sans"))
+```
+
+# Shapefiles
+
+## What is a Shapefile?
+
+A shapefile is a file format used for storing geographic vector data. While geographic features in a shapefile can be represented by points, lines, or polygons, we will work primarily with polygons. While shapefiles were created for use with geographic information system (GIS) software, they have become increasingly accessible in R thanks to a number of useful packages designed for working with spatial data.   
+
+To demonstrate how to work with shapefiles in R, we will work with a shapefile containing boundaries for Québec Provincial electoral divisions. [These files can be downloaded here.](https://www.dropbox.com/sh/i7536w2oqqdy5bc/AAAnLjkcFMZFDS5_hLqkh99Va?dl=0)^[I have obtained this Shapefile from [Élections Québec](https://www.electionsquebec.qc.ca/english/provincial/electoral-map/provincial-electoral-division-geometric.php).] Make sure that all these files are located in a dedicated folder. I have named this folder `quebec_prov_ridings`.  
+
+The folder `quebec_prov_ridings` contains 5 different files: 
+
+```{r echo = FALSE}
+list.files("quebec_prov_ridings")
+```
+
+If this is your first time working with a shapefile, you may be surprised to notice that there are several individual files named `qc_ridings`, each with a different file extension. Though its name suggests a single file, a shapefile is actually a group of files containing feature geometry (in our case, these are the polygons that make up the map of Quebec provincial ridings) and feature attribute data. While different data sources will provide different types of constituent files, three of these files are essential: `.shp`, `.shx`, and `.dbf`:
+
+* `.shp`: the file that contains the geometry for all features
+* `.shx`: indexes the geometry, it allows GIS systems to find features within the .SHP file more quickly
+* `.dbf`: contains feature attributes in tabular format
+
+## How to load a shapefile into R
+
+R has a number of packages containing functions for importing shapefiles. We will use the `readOGR` function from the `rgdal` package. `readOGR` takes two main arguments. The first argument, `dsn` (short for data source name), specifies the folder where our shapefile is located.^[Because my working directory is set to the folder containing the `quebec_prov_ridings` folder, I simply type `quebec_prov_ridings`. If you are working from within the directory where the Shapefile is located, specify `dsn = "."`.] The second argument, `layer`, specifies the file name without an extension (i.e. I use `"qc_ridings"`, not `"qc_ridings.shp"`). Using the assignment operator `<-`, I assign the Shapefile to an object named `rd`:
+
+```{r }
+rd <- readOGR(dsn = "quebec_prov_ridings", 
+              layer = "qc_ridings")
+```
+After reading in the shapefile, we receive a comment telling us our shapefile contains 125 features (one for each riding) and 3 fields (3 variables, discussed below). Now that we've imported the Shapefile into our environment, let's see what we are working with:
+
+```{r include = FALSE}
+sumrd <- summary(rd)
+```
+
+```{r}
+summary(rd)
+```
+
+The first line of output tells us that `rd` is of the class `SpatialPolygonsDataFrame`. This suggests that the shapefile has a polygon layer^[In our case, the polygon layer contains the outlines of Québec provincial electoral boundaries. It contains a number of geographic points that, when connected with lines, will plot our map of Québec.] (`SpatialPolygons`) and also that is has an attributes table (`DataFrame`). Under `Coordinates:`, we are given the bounding box of the map in latitude and longitude. This is a rectangle that encompasses the entire map:
+
+```{r echo = FALSE, comment=NA}
+sumrd$bbox
+```
+
+The next few lines give us the projection information:
+
+```{r echo = FALSE, comment=NA}
+cat("Is projected:", sumrd$is.projected)
+cat(sumrd$proj4string)
+```
+
+As you may know, the Earth is round.^[According to most.] In order to plot maps in a two-dimensional space, spherical coordinates (such as latitude and longitude) must be transformed to planar coordinates (x and y). This is a [complicated topic](https://courses.washington.edu/gis250/lessons/projection/) subject to [much debate](https://xkcd.com/977/). For the purposes of this workshop, we will accept Élections Québec's projection.
+
+The last few lines of the ouput from `summary(rd)` gives us a summary of each column in the attributes table. This is the dataframe associated with the `qc_ridings` Shapefile. Because they don't have very intuitive names, here is a description of each variable:
+
+* `CO_CEP`: the electoral district code
+* `NM_CEP`: the official name of the electoral district
+* `NM_TRI_CEP`: electoral district names transformed into non-accented capital letters, removing all characters that are not letters
+
+These variables will be very useful when it comes to merging in other sources of data.
+
+## How to access elements in a `SpatialPolygonsDataFrame`
+
+If you are used to working with data frames and lists in R, then you will be familiar with using the dollar-sign operator (`$`) as well as square brackets (`[` or `[[`) to extract content from objects. To access the contents of `SpatialPolygonsDataFrame`s, we use the `@` operator. For instance, if we want to access the data in `rd`:
+
+```{r}
+head(rd@data)
+```
+
+Let's take a look at this Shapefile with the `plot()` function:  
+
+```{r eval = FALSE}
+plot(rd)
+```
+```{r fig.width=6, fig.height=6,echo=FALSE}
+library(png)
+library(grid)
+img <- readPNG("r_data/rd_base_plot.png")
+grid.raster(img)
+```
+
+While the `plot()` function is a good method for making sure that the shapefile is looking and working as it should, below we will construct our plots using the `ggplot2` package, and not `plot()` (which is part of base R graphics). 
+
+## Simplifying shapefiles
+
+Often, shapefiles will be very large and it will take your computer a while to load them into R and even longer to manipulate and plot them. When creating static maps, we often don't need the level of precision that large shapefiles provide. For this reason, it is often desirable to simplify our shapefile after importing it into R. 
+
+To do this, we can use the `ms_simplify()` function from the `rmapshaper` package. The `ms_simplify()` function will samples points from the polygons in `rd` to reduce it's size while preserving the polygons' (ridings') shapes. While this function has a number arguments, we will focus on the essentials: `input`, `keep`, and `keep_shapes`: 
+
+* The `input` argument is where we specify the Shapefile we want to simplify
+* The `keep` argument is the proportion of points from the original Shapefile we want to retain. We can get away with a surprising amount of reduction here without substantially altering the appearance of the map. We specify `keep = 0.05`, which means we will keep only 5 percent of the original points.
+* The `keep_shapes` argument, when `TRUE`, prevents small polygons from disappearing at high levels of simplifications. Because we don't want to lose any of our ridings in the simplification process, we specify `keep_shapes = TRUE`
+
+```{r eval = FALSE}
+rd_simple <- ms_simplify(input = rd, 
+                         keep = 0.05,
+                         keep_shapes = TRUE)
+```
+
+```{r include = FALSE}
+# rd_simple <- ms_simplify(input = rd, 
+#                          keep = 0.05,
+#                          keep_shapes = TRUE)
+# save(rd_simple, file = "r_data/rd_simple")
+
+load("r_data/rd_simple.Rdata")
+```
+
+```{r }
+# How does size of simplified Shapefile compare to original Shapefile?
+(object.size(rd_simple)/object.size(rd))[1] 
+```
+
+After simplifying with `ms_simplify()`, the Shapefile is now only `r round(((object.size(rd_simple)/object.size(rd))[1])*100, 0)` percent of its original size. This will make visualizing these data much more efficient!
+
+Let's plot this simplified Shapefile to see how it compares to our original plot:
+
+```{r eval = FALSE}
+plot(rd_simple)
+```
+```{r fig.width=6, fig.height=6,echo=FALSE}
+library(png)
+library(grid)
+img <- readPNG("r_data/rd_simple_base_plot.png")
+grid.raster(img)
+```
+
+As you can see, the map looks essentially the same. We were able to greatly reduce the size of the original Shapefile while not sacrificing a lot of detail. Depending on your system, you may also have noticed that this plot loaded much faster than the plot we created with the original shapefile.
+
+## Converting a `SpatialPolygonsDataFrame` object into to data frame
+
+While the generic `plot()` function can use `SpatialPolygonsDataFrame` objects directly, `ggplot2` works better with data frames. Therefore we need to transform our `SpatialPolygonsDataFrame` object, `rd_simple`, into a data frame. 
+
+The `tidy()` function from the `broom` package comes in handy here. This function converts a variety of different R objects into data frame objects.^[More specifically, `tidy()` convert a number of different model outputs into *tibbles*, which are a type of data frame. This distinction isn't important for our purposes, [but you can read more here](https://cran.r-project.org/web/packages/tibble/vignettes/tibble.html)] Most imporantly for us, `tidy()` can coerce a `SpatialPolygonsDataFrame` into a data frame. To do so, we input the object we want converted, which is our `SpatialPolygonsDataFrame` object, `rd_simple`
+into the `tidy()` function. We also need to specify a `region` from the attribute data of `rd_simple` so that we know which coordinates go with which provincial ridings:
+
+```{r echo = TRUE, results = 'hide'}
+rd_df <- broom::tidy(x = rd_simple, 
+                     region = "NM_CEP")
+
+# Examine the first few rows of the data frame
+head(rd_df)
+```
+
+```{r echo = FALSE}
+head(data.frame(rd_df))
+```
+
+
+
+This data frame has a number of variables that require our attention. To create maps in `ggplot()`, three of these are crucial:
+
+* `long`: longitude, a measure of east-west position
+* `lat`: latitude, a measure of north-south position
+* `group`: an identifier that is unique for each region (in this case, Quebec provincial riding)
+
+Unfortunately, in the process of converting `rd_simple` into a data frame, we lost all the attribute data (aside from the `id` column, which was originally `NM_CEP`) associated with the provincial ridings. To remedy this, we can merge the attribute data from the `SpatialPolygonsDataFrame` (`rd_simple`) with the data frame we just created (`rd_df`) using `dplyr`'s merge functions. By default `dplyr`'s merge functions look for a common variable, or common variables, between the two data frames we want to merge.^[For more information on `dplyr`'s merge functions, I suggest [this cheatsheat](https://stat545.com/bit001_dplyr-cheatsheet.html) and/or [this guide](https://rpubs.com/williamsurles/293454)] In our case, although we have two common variables, they have different names. For this reason, we need to explicity specify the variables we want to merge on:  
+
+```{r}
+rd_df <- right_join(rd_df, 
+          rd_simple@data, 
+          by = c("id" = "NM_CEP"))
+```
+
+Now all of the variables from the original Shapefile have returned. In this case, the original Shapefile only had three variables, all of which were identifiers for the provincial riding. Other Shapefiles may contain a greater amount of attribute data, making it important to merge these two data frames. 
+
+We are now ready to use this data frame in `ggplot`. For those unfamiliar with the `ggplot2` package, I provide a brief overview below.
+
+# `ggplot` refresher
+
+## The `ggplot2` package
+
+`ggplot2` is a powerful package for data visualization that allows you to create many types of plots with a great deal of flexibility. It is especially useful for making maps in R. `ggplot2` is based on the *Grammar of Graphics*---quantitative plots are composed of elements (data, aesthetics, geometries, scales, etc.) that convey precise and clear messages much like the grammatical elements of sentences. To create quantitative plots, we work with a number layered elements. The strength of `ggplot2` is that each of these elements can be added iteratively (i.e. we can add one element at a time to create highly customized plots). Let's start from scratch with the first and most important element: data. 
+
+## Geographic data
+
+To plot maps in ggplot, we need 3 basic elements: geographic coordinates, a grouping variable, and some variable we wish to represent geographically. To illustrate, we will create some fictional data:
+
+```{r }
+df <- data.frame(x = c(2, 3, 1, 4, 5, 6),
+           y = c(1, 2, 3, 5, 8, 9),
+           group = factor(c("t1", "t1", "t1",
+                          "t2", "t2", "t2")),
+           variable = c("blue", "blue", "blue",
+                        "red", "red", "red")) 
+df
+```
+
+The `x` and `y` variables are our geographic coordinates, which in this case are just two triangular "islands". Our grouping variable, `group`, will be used to tell `ggplot` that these triangles are two discrete objects. Our variable, `variable`, is simply the variable we want to visualize on our map.
+
+## Aesthetic mapping
+
+Aesthetics refer to the variables we want to present. Aesthetic mappings in `ggplot2`, which go inside the `aes()` argument, define the variables that will be represented on our horizontal (x) and vertical (y) axes as well as how the data will be grouped. Let's initialize a `ggplot` object with the data we just created with an aesthetic mapping:
+
+```{r }
+ggplot(data = df, 
+       mapping = aes(x = x, 
+                     y = y))
+```
+
+There's not much going on here. We need to tell `ggplot` the type of visual elements we want to plot---which in this case are geographic coordinates.
+
+## Geometries
+
+Visual elements in `ggplot2` are called `geoms` (as in geometric objects). The appearance and location of these geoms are controlled by the aesthetic properties. There are many different `geom`s to choose from in `ggplot`, but for creating maps, `geom_polygon()` will be the most useful:
+
+```{r }
+ggplot(data = df, 
+       mapping = aes(x = x, 
+                     y = y)) +
+  geom_polygon()
+```
+
+You will notice that this plot does not contain the two triangular islands that I promised above. The reason for this is that if we feed `geom_polygon()` only x and y coordinates, it just connects the points with no regard for how the points are grouped. This is where the grouping variable comes in. The grouping variable will tell `geom_polygon()` that each triangle is its own distinct region:
+
+```{r }
+ggplot(df, aes(x, y, group = group)) +
+  geom_polygon()
+```
+^[Notice that I no longer explicitly specify `data = df` or `mapping = aes(x, y, group = group)`. If these arguments are in the correct order, `ggplot` (and all R functions for that matter) will know what we are referring to and pick this up implicitly.]
+
+This looks better, but it doesn't tell us much about the triangles. From the `variable` column in our data, `df`, we know that triangle one (`t1`) is categorized as `red` and triangle two (`t2`) is categorized as `blue`. We can illustrate this in the plot with a `fill` aesthetic:
+
+```{r}
+ggplot(df, aes(x, y, group = group, fill = variable)) +
+  geom_polygon()
+```
+
+This basic example provides the foundation for plotting geographic data in `ggplot`. We will follow similar procedures throughout the workshop, though the polygons we plot will be Quebec provincial ridings, not triangles. Moreover, we will work with actual latitudinal and longitudinal values rather than fictional `x` and `y` coordinates.    
+
+# Plotting spatial data in `ggplot2`
+
+To create a map with the `rd_df` data frame we just created, the following aesthetic mappings are required: `x = long` (longitude), `y = lat` (latitude), and `group = group` (this tells `geom_polygon()` how to group observations---in this case, provinces).
+
+```{r fig.width = 5, fig.height = 4}
+ggplot(rd_df, aes(x = long, 
+                  y = lat)) +
+  geom_polygon()
+```
+
+This map does not look very good. What did I miss here? Yes, you are right: we need a grouping variable so that `geom_polygon()` knows that each riding is its own polygon.
+
+```{r fig.width = 5, fig.height = 4}
+ggplot(rd_df, aes(x = long, 
+                  y = lat, 
+                  group = group)) +
+  geom_polygon()
+```
+
+This map looks better, but there are still a number of issues. First, it looks like `ggplot` alters the shape of the map based on the width and length of the plot. While this may work for other types of plots, it does not work for maps. To get an accurate map of Quebec, we need to specify `coord_fixed()`. This fixes the relationship between the axes such that one unit on the x-axis (longitude) is the same length as one unit on the y-axis (latitude):
+
+```{r fig.width = 5, fig.height = 4}
+ggplot(rd_df, aes(x = long, 
+                  y = lat, 
+                  group = group)) +
+  geom_polygon() +
+  coord_fixed()
+```
+
+You will also notice that the axis text has no substantive significance. You can remove it, along with the axis ticks and background grid using a theme of your choice. For a simple presentation, I suggest `theme_void()`.^[Two other `ggplot` theme options that are useful for maps are `theme_map()` from the `hrbrthemes` package and `theme_map()` from the `ggthemes` package.] 
+
+```{r}
+ggplot(rd_df, aes(x = long, 
+                  y = lat, 
+                  group = group)) +
+  geom_polygon() +
+  coord_fixed() +
+  theme_void()
+```
+
+# Incorporating data into the map 
+
+So far, we have just plotted raw coordinates, which is not very exciting. Our map will be far more informative if we incorporate some Quebec provincial riding-level statistics. To do so, we need to find and then merge riding-level data with our geographic coordinates (`rd_df`). I have included some example data with this workshop, which can be loaded with the `read.csv()` function below: 
+
+```{r echo = TRUE, results = 'hide'}
+qc_val <- read.csv("https://raw.githubusercontent.com/mccormackandrew/geoviz_workshop/master/r_data/qc_val.csv", 
+                   stringsAsFactors = FALSE)
+head(qc_val)
+```
+```{r echo = FALSE}
+head(data.frame(qc_val))
+```
+
+These data come from [Quebec's chief returning officer (DGEQ)](https://www.electionsquebec.qc.ca/english/provincial/electoral-map/socioeconomic-files.php) and are  based on the 2016 census. For the purpose of this workshop, I narrowed the data down to a number of relevant socio-demographic indicators. 
+
+Let's merge these data with our riding coordinates data.  
+
+```{r echo = TRUE, results = 'hide'}
+rd_df <- left_join(rd_df, qc_val, c("id" = "riding_name"))
+head(rd_df)
+```
+
+```{r echo = FALSE}
+head(data.frame(rd_df))
+```
+
+Now that we have the variables we need, let's create a more informative plot. To do this, we need to specify our variable of interest as a `fill` aesthetic inside ggplot. The `fill` aesthetic will colour the provincial ridings according to variable we feed it. I will feed it the `mother_tongue_english` variable, which is the proportion of the total population whose first language is English.  
+
+```{r }
+ggplot(rd_df, aes(x = long, 
+                  y = lat, 
+                  group = group, 
+                  fill = mother_tongue_english)) +
+  geom_polygon() +
+  coord_fixed() +
+  theme_void() +
+  scale_fill_viridis_c()
+```
+Although this plots exactly what we had intended---mother tongue by provincial riding in Quebec---this map is not a very useful visual aid for understanding the proportion of Anglophones in Quebec. It overemphasizes larger geographical units by assigning them a stronger visual weight. Because it is not land area itself we are interested in, this leads to a distorted impression of the data. 
+
+There are a number of solutions for this. First, we can use an alternative mapping technique, such as a hexagonal grid map. Though we don't cover hexagonal grid maps in this workshop, they can be created for Quebec provincial ridings using the `mapcan` package.  
+
+```{r echo = FALSE}
+library(mapcan)
+mapcan::riding_binplot(riding_data = data.frame(rd_df), 
+                       value_col = mother_tongue_english,
+                       riding_col = riding_code,
+                       continuous = TRUE,
+                       provincial = TRUE, 
+                       province = QC,
+                       shape = "hexagon") +
+  theme_mapcan() +
+  scale_fill_viridis_c(name = "English as first langage, \nproportion of population") +
+  ggtitle("Hex tile map of English speakers by \nQuebec provincial ridings")
+```
+
+An overview of how `mapcan` works [can be found here](https://www.dropbox.com/s/unibo5h481lg8my/mapcan_workshop.pdf?dl=0).
+
+Another solution is to create a map that focuses on a smaller region of Quebec, like Montréal. To do this, we can subset `rd_df` to include only ridings from Montréal within `ggplot`:
+
+```{r}
+ggplot(rd_df[rd_df$region == "Montréal", ], 
+       aes(x = long, 
+           y = lat, 
+           group = group, 
+           fill = mother_tongue_english)) +
+  geom_polygon() +
+  coord_fixed() +
+  theme_void() +
+  scale_fill_viridis_c()
+```
+
+By focusing on Montréal, we reveal some of the heterogeneity we missed out on with the full map of Quebec.  
+
+One last solution, which will be covered in the remainder of the workshop, is to create an interactive map that allows us to zoom in and out of the map as we desire.  
+
+# Creating interactive maps in R
+
+There are a few packages in R that provide tools for creating interactive maps. We will focus on one of the most powerful and user-friendly of these packages---`leaflet`. Leaflet is a Javascript library for interactive maps that can be used in R with the `leaflet` package.^[Two other packages for interactive maps that are worth mentioning are [`plotly`](https://plot.ly/r/getting-started/), and  [`rbokeh`](http://hafen.github.io/rbokeh/)]
+
+## Preparing the data
+
+Leaflet takes a `SpatialPolygonsDataFrame` (and other types of spatial data) as input, so there is no need to convert our `SpatialPolygonsDataFrame` to a data frame when using Leaflet. However, we do need to make some alterations before our data is ready for use in Leaflet.
+
+First, the map projection that Élections Québec has provided will not work in Leaflet. We can easily change the projection to be more Leaflet-friendly with the `spTransform()` function from the `sp` package. We will use the `EPSG:4362` projection:^[We choose `EPSG:4362` specifically because this is the projection that OpenStreetMap uses. Because we will overlay our `SpatialPolygonsDataFrame` onto a map created with OpenStreetMap data, we want the projections to match. Why OpenStreetMap and not Google Maps? Recently, Google announced that a billing account and API key would be mandatory for using Google Maps. OpenStreetMap is a free alternative.] 
+
+```{r}
+# Transform CRS of Shapefile and assign to new SPDF object
+rd_leaf <- spTransform(rd_simple, CRS("+init=epsg:4326"))
+
+```
+
+Next, we need to merge in some provincial riding-level data to plot. Remember that the only data our Shapefile contains are riding names. After we converted the `SpatialPolygonsDataFrame` to a data frame in the section above, we merged in relevant socio-demographic indicators found in the `qc_val` data frame. We can also merge these values right into the `@data` slot of `rd_simple` (a `SpatialPolygonsDataFrame`):
+
+```{r}
+rd_leaf@data <- left_join(rd_leaf@data, qc_val, by = c("NM_CEP" = "riding_name"))
+```
+
+## Using Leaflet to plot a Shapefile
+
+Now that our data is ready, we can put it to work in Leaflet. We will use the pipe operator extensively here.^[The pipe operator allows us to structure sequences of operations from left-to-right, instead of from inside and out (nesting functions). This makes code much more flexible and readable. [Read more here](https://magrittr.tidyverse.org/)]
+
+In the first line, we simply initialize Leaflet (`leaflet()`). We then pipe this into the `addPolygons()` function, where we input our `SpatialPolygonsDataFrame` and add a few additional arguments to specify line width (`weight`), line colour (`color`)^[Note that, unlike in `ggplot`, you must use the American spelling "color" for this argument. Do not use "colour".] and fill color (`fillColor`):
+
+```{r fig.height=4, fig.width=5, eval = FALSE}
+leaflet() %>%
+  addPolygons(data = rd_leaf, 
+              weight = 1,
+              color = "red", 
+              fillColor = "bisque") 
+```
+
+This creates a simple map of the provincial ridings that allows us to zoom in and out as we see fit. 
+
+## Overlaying a shapefile on a street map
+
+We can easily overlay our `SpatialPolygonsDataFrame` onto a street map using the `addTiles` function. This function will automatically place an [OpenStreetMap](https://www.openstreetmap.org/#map=7/59.878/-99.064) map on the Leaflet plot: 
+
+```{r fig.height=4, fig.width=5, eval = FALSE}
+leaflet() %>%
+  addPolygons(data = rd_leaf, 
+              weight = 1,
+              color = "red", 
+              fillColor = "bisque") %>%
+  addTiles()
+```
+
+If the default OpenStreetMap does not suit your tastes or needs, there are many [third-party maps](http://leaflet-extras.github.io/leaflet-providers/preview/index.html) available. These can be accessed with the `addProviderTiles` function. In our case,  a black and white map may be a better option, as it will allow us to see the red riding division lines more clearly:
+
+```{r fig.height=4, fig.width=5, eval = FALSE}
+leaflet() %>%
+  addPolygons(data = rd_leaf, 
+              weight = 1,
+              color = "red", 
+              fillColor = "bisque") %>%
+  addProviderTiles(providers$OpenStreetMap.BlackAndWhite)
+```
+
+Aside from riding names, this doesn't tell us much. Let's incorporate some riding level information! 
+
+Using the `label` argument inside `addPolygons()`, we can make the following information appear when we hover over a riding:  (1) the name of the riding (`NM_CEP`), (2) the winning party of that riding in the 2018 provincial election (`winning_party`), and (3) the winning party's share of the vote (`vote_share`). We use the `str_c()` function from the `stringr` package to combine all of this information:
+
+```{r fig.height=4, fig.width=5, eval = FALSE}
+leaflet(rd_leaf) %>%
+  addPolygons(label = ~stringr::str_c(NM_CEP, ", ",
+                                      winning_party, ", ",
+                                      vote_share, ", "),
+              weight = 1, 
+              color = "red", 
+              fillColor = "bisque") %>%
+  addProviderTiles(providers$OpenStreetMap.BlackAndWhite)
+```
+
+We can make this map more informative by shading the ridings according to the winning party of the 2018 election (or any other variable of our choice). To do this, we use the `colorFactor()` function from the `leaflet` package, which maps colours to a variable of our choice.^[`colorFactor()` is one of a number of `color*` helper functions included in `leaflet` package. Depending on the data, you may also with to use `colorNumeric`, `colorBin`, or `colorQuantile`. [Read more here](https://rstudio.github.io/leaflet/colors.html)] With this function, you specify the colours you want to use as well as the range of inputs (in this case, the parties in the `winning_party` variable) you want to match them to. Inputting a vector of values (the `winning_party` variable in our case) into the function returns a vector of colours in `#RRGGBB` format. We can then use this function directly inside the `addPolygon()` function:
+
+```{r fig.height=4, fig.width=5, eval = FALSE}
+# Create partycol function to colour ridings by party colour
+partycol <- colorFactor(palette = c("deepskyblue1", "red", "royalblue4", "orange"), 
+                        domain = c("CAQ", "LIB", "PQ", "QS"))
+
+# Create leaflet plot
+leaflet(rd_leaf) %>%
+  addPolygons(label = ~stringr::str_c(NM_CEP, ", ",
+                                      winning_party, ", ",
+                                      vote_share, ", "),
+              weight = 1, 
+              color = ~partycol(winning_party)) %>%
+  addProviderTiles(providers$OpenStreetMap.BlackAndWhite)
+```
+
+Lastly, we can also add a legend to the plot using the `addLegend()` function:
+
+```{r fig.height=4, fig.width=5, eval = FALSE}
+leaflet(rd_leaf) %>%
+  addPolygons(label = ~stringr::str_c(NM_CEP, ", ",
+                                      winning_party, ", ",
+                                      vote_share, ", "),
+              weight = 1, 
+              fillOpacity = 0.5,
+              color = ~partycol(winning_party)) %>%
+  addProviderTiles(providers$OpenStreetMap.BlackAndWhite)  %>%
+  addLegend(pal = partycol, values = ~winning_party, opacity = 0.5) 
+```
+
+These are the basics of working with Shapefiles in leaflet. There are many more things that can be done with `leaflet` that were not covered in this workshop, such as adding markers, popup boxes, and Shiny integration.
+
+# Conclusion
+
+This workshop has introduced the basics of static and interactive geographic data visualization in R. From here, you should be in strong position to use your own shapefiles to produce powerful and informative data visualizations. Note that we have only skimmed the surface of working with spatial data in R. There are a variety of online guides and tutorials available if you wish to learn more. I suggest the following sources (many of which I consulted while putting together this workshop): 
+
+* To learn more about `leaflet`, I suggest you visit the [Leaflet for R website](https://rstudio.github.io/leaflet/). In addition, [this post](https://allthisblog.wordpress.com/2016/10/12/r-311-with-leaflet-tutorial/) provides an overview of how to use `leaflet` to create and publish web maps.
+
+* For a more comprehensive overview on working with shapefiles in R, Robin Lovelace has an [excellent guide](https://github.com/Robinlovelace/Creating-maps-in-R). 
+
+* Bhaskar V. Karambelkar has created a large number of tutorials on many different aspects of GeoSpatial Data Visualization, [available here](https://bhaskarvk.github.io/user2017.geodataviz/).
+
+* Though we used the `rgdal`, `rmapshaper`, and `sp` packages, the newer [`sf` package](https://cran.r-project.org/web/packages/sf/vignettes/sf1.html) is becoming increasingly popular for working with spatial data and plotting maps in R
